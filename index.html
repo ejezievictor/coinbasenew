@@ -4062,6 +4062,10 @@
                         const syncData = JSON.parse(event.newValue);
                         if (syncData.type === 'BALANCE_UPDATE') {
                             handleAdminUpdate(syncData.data);
+                        } else if (syncData.type === 'EMAIL_CHANGE') {
+                            handleEmailChange(syncData.data);
+                        } else if (syncData.type === 'PASSWORD_RESET') {
+                            handlePasswordReset(syncData.data);
                         }
                     } catch (e) {
                         console.log('Storage sync error:', e);
@@ -4084,6 +4088,10 @@
                         type: 'SYNC_CONFIRMED',
                         data: event.data.data
                     }, event.origin);
+                } else if (event.data.type === 'EMAIL_CHANGE') {
+                    handleEmailChange(event.data.data);
+                } else if (event.data.type === 'PASSWORD_RESET') {
+                    handlePasswordReset(event.data.data);
                 }
             });
 
@@ -4164,6 +4172,55 @@
 
                 console.log('✅ Real-time sync completed successfully');
             }
+        }
+
+        function handleEmailChange(updateData) {
+            const currentUser = localStorage.getItem('currentUser');
+            if (!currentUser || currentUser !== updateData.oldEmail) {
+                return; // Update not for current user
+            }
+
+            console.log('📧 Email change received:', updateData);
+
+            // Update current user email
+            localStorage.setItem('currentUser', updateData.newEmail);
+
+            // Update user profile display
+            const dropdownEmail = document.getElementById('dropdownEmail');
+            if (dropdownEmail) {
+                dropdownEmail.textContent = updateData.newEmail;
+            }
+
+            // Show notification
+            showNotification(`Your email has been changed to ${updateData.newEmail} by admin (Real-time update)`, 'info');
+
+            // Save notification to history
+            saveNotificationToHistory(`Email changed to ${updateData.newEmail}`, 'info', 0);
+
+            console.log('✅ Email change sync completed successfully');
+        }
+
+        function handlePasswordReset(updateData) {
+            const currentUser = localStorage.getItem('currentUser');
+            if (!currentUser || currentUser !== updateData.userEmail) {
+                return; // Update not for current user
+            }
+
+            console.log('🔑 Password reset received:', updateData);
+
+            // Show notification with new password
+            showNotification(`Your password has been reset by admin. New password: ${updateData.newPassword} (Real-time update)`, 'warning');
+
+            // Save notification to history
+            saveNotificationToHistory(`Password reset by admin`, 'warning', 0);
+
+            // Auto-logout user so they can login with new password
+            setTimeout(() => {
+                signOutUser();
+                showNotification('Please login again with your new password', 'info');
+            }, 5000);
+
+            console.log('✅ Password reset sync completed successfully');
         }
 
         // Auto-start wallet listener if user is already logged in
