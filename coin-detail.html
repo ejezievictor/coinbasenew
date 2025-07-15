@@ -1,0 +1,2184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title id="pageTitle">Bitcoin Price | BTC Price Index and Live Chart — CoinMarketCap</title>
+    <meta name="description" content="Get the latest Bitcoin price, BTC market cap, trading pairs, charts and data today from the world's number one cryptocurrency price-tracking website">
+
+    <!-- Supabase -->
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+
+    <!-- TradingView Chart Widget -->
+    <script type="text/javascript" src="https://s3.tradingview.com/tv.js" async></script>
+    <script type="text/javascript">
+        // Ensure TradingView loads properly
+        window.addEventListener('load', function() {
+            if (typeof TradingView === 'undefined') {
+                console.log('🔄 TradingView not loaded, retrying...');
+                const script = document.createElement('script');
+                script.src = 'https://s3.tradingview.com/tv.js';
+                script.async = true;
+                document.head.appendChild(script);
+            }
+        });
+    </script>
+
+    <!-- User Session Management -->
+    <script>
+        // Session Management Constants
+        const SESSION_DURATION = 60 * 60 * 1000; // 1 hour in milliseconds
+
+        // Supabase is currently disabled, using localStorage for user data
+        console.log('📊 Using localStorage for user data management');
+
+        function updateLastActivity() {
+            const sessionData = JSON.parse(localStorage.getItem('userSession') || '{}');
+            if (sessionData.user) {
+                sessionData.lastActivity = Date.now();
+                localStorage.setItem('userSession', JSON.stringify(sessionData));
+            }
+        }
+
+        function trackUserActivity() {
+            updateLastActivity();
+        }
+
+        // Add activity listeners
+        document.addEventListener('click', trackUserActivity);
+        document.addEventListener('keypress', trackUserActivity);
+        document.addEventListener('scroll', trackUserActivity);
+        document.addEventListener('mousemove', trackUserActivity);
+
+        // Check for existing user session
+        function checkUserSession() {
+            console.log('🔍 Checking user session on coin detail page...');
+
+            // First check basic localStorage items
+            const currentUser = localStorage.getItem('currentUser');
+            const currentUserId = localStorage.getItem('currentUserId');
+
+            console.log('👤 Current user from localStorage:', currentUser);
+            console.log('🆔 Current user ID from localStorage:', currentUserId);
+
+            // If we have user data, show logged in state regardless of session data
+            if (currentUser && currentUserId) {
+                console.log('✅ User found in localStorage, showing logged in state');
+
+                // Update session data if missing
+                const sessionData = JSON.parse(localStorage.getItem('userSession') || '{}');
+                if (!sessionData.user) {
+                    const newSessionData = {
+                        user: { email: currentUser, id: currentUserId },
+                        loginTime: Date.now(),
+                        lastActivity: Date.now()
+                    };
+                    localStorage.setItem('userSession', JSON.stringify(newSessionData));
+                    console.log('🔄 Session data restored');
+                }
+
+                // Show logged in state
+                showLoggedInState(currentUser);
+
+                // Update last activity
+                updateLastActivity();
+
+                return;
+            }
+
+            // Priority 2.5: Check for user data with user_${id} format (same as main page)
+            const allKeys = Object.keys(localStorage);
+            for (const key of allKeys) {
+                if (key.startsWith('user_')) {
+                    try {
+                        const userData = JSON.parse(localStorage.getItem(key));
+                        if (userData && userData.email) {
+                            console.log('✅ Found user data in user_${id} format:', key);
+                            const userId = key.replace('user_', '');
+                            localStorage.setItem('currentUser', userData.email);
+                            localStorage.setItem('currentUserId', userId);
+
+                            showLoggedInState(userData.email);
+                            updateLastActivity();
+                            return;
+                        }
+                    } catch (e) {
+                        // Skip invalid JSON
+                    }
+                }
+            }
+
+            // Priority 3: Check for any user data in localStorage keys
+            for (const key of allKeys) {
+                if (key.includes('@') && key.includes('.')) {
+                    try {
+                        const userData = JSON.parse(localStorage.getItem(key));
+                        if (userData && userData.email) {
+                            console.log('✅ Found user data in key:', key);
+                            localStorage.setItem('currentUser', userData.email);
+                            localStorage.setItem('currentUserId', userData.id || key);
+
+                            showLoggedInState(userData.email);
+                            updateLastActivity();
+                            return;
+                        }
+                    } catch (e) {
+                        // Skip invalid JSON
+                    }
+                }
+            }
+
+            // No user session found, show default state
+            console.log('⚠️ No user session found, showing default user state');
+            showDefaultUserState();
+        }
+
+        // Update user profile display - ALWAYS show user profile on coin pages
+        function updateUserProfile(user) {
+            const userProfile = document.getElementById('userProfile');
+            const userName = document.getElementById('userName');
+            const userPhoto = document.getElementById('userPhoto');
+            const userInitials = document.getElementById('userInitials');
+            const dropdownEmail = document.getElementById('dropdownEmail');
+            const walletBalance = document.getElementById('walletBalance');
+
+            // ALWAYS show user profile and wallet balance on coin pages
+            if (userProfile) userProfile.style.display = 'flex';
+            if (walletBalance) walletBalance.style.display = 'flex';
+
+            if (user && user.email) {
+                // User is logged in - show real user data
+                const displayName = user.email.split('@')[0];
+                if (userName) userName.textContent = displayName;
+
+                const initials = displayName.substring(0, 2).toUpperCase();
+                if (userInitials) userInitials.textContent = initials;
+
+                if (dropdownEmail) dropdownEmail.textContent = user.email;
+
+                // Load user data and balance
+                if (user.id) {
+                    loadUserData(user.id);
+                }
+
+                console.log('👤 User profile updated for:', user.email);
+            } else {
+                // No user logged in - show guest user
+                if (userName) userName.textContent = 'Guest';
+                if (userInitials) userInitials.textContent = 'G';
+                if (dropdownEmail) dropdownEmail.textContent = 'guest@coinmarketcap.com';
+
+                // Show default balance for guest
+                updateWalletBalance(0);
+
+                console.log('👤 Showing guest user profile');
+            }
+        }
+
+            // Force visibility
+            setTimeout(() => {
+                if (userProfile) {
+                    userProfile.style.display = 'flex';
+                    userProfile.style.visibility = 'visible';
+                }
+                if (walletBalance) {
+                    walletBalance.style.display = 'flex';
+                }
+            }, 100);
+        }
+
+        function showDefaultUserState() {
+            console.log('👤 Showing default user state (Guest)');
+
+            const userProfile = document.getElementById('userProfile');
+            const userName = document.getElementById('userName');
+            const userInitials = document.getElementById('userInitials');
+            const dropdownEmail = document.getElementById('dropdownEmail');
+            const walletBalance = document.getElementById('walletBalance');
+
+            // Always show user profile on coin pages, even for guests
+            if (userProfile) {
+                userProfile.style.display = 'flex';
+                console.log('👤 User profile shown for guest');
+            }
+            if (userName) {
+                userName.textContent = 'Guest';
+                console.log('📝 Username set to: Guest');
+            }
+            if (userInitials) {
+                userInitials.textContent = 'G';
+            }
+            if (dropdownEmail) {
+                dropdownEmail.textContent = 'guest@coinmarketcap.com';
+            }
+
+            // Show wallet balance with $0.00
+            if (walletBalance) {
+                walletBalance.style.display = 'flex';
+                const balanceElement = document.querySelector('.wallet-balance .balance-amount');
+                if (balanceElement) {
+                    balanceElement.textContent = '$0.00';
+                }
+            }
+
+            // Force visibility
+            setTimeout(() => {
+                if (userProfile) {
+                    userProfile.style.display = 'flex';
+                    userProfile.style.visibility = 'visible';
+                }
+                if (walletBalance) {
+                    walletBalance.style.display = 'flex';
+                }
+            }, 100);
+        }
+
+        // Load user data (copied from main page)
+        function loadUserData(userId) {
+            // This would normally fetch from your backend/Supabase
+            // For now, we'll use localStorage to simulate
+            const userData = localStorage.getItem(`user_${userId}`);
+            if (userData) {
+                const data = JSON.parse(userData);
+                updateWalletBalance(data.balance || 0);
+
+                // Load transactions
+                if (data.transactions && data.transactions.length > 0) {
+                    const transactionList = document.getElementById('transactionList');
+                    if (transactionList) {
+                        const noTransactions = transactionList.querySelector('.no-transactions');
+                        if (noTransactions) {
+                            noTransactions.remove();
+                        }
+
+                        data.transactions.forEach(transaction => {
+                            addTransaction(transaction.type, transaction.amount, transaction.date);
+                        });
+                    }
+                }
+            }
+
+            // Start listening for wallet updates from admin
+            startWalletUpdateListener(userId);
+        }
+
+        // Update wallet balance display (copied from main page)
+        function updateWalletBalance(balance) {
+            const balanceElement = document.querySelector('.wallet-balance .balance-amount');
+            if (balanceElement) {
+                balanceElement.textContent = `$${balance.toFixed(2)}`;
+                console.log('💰 Wallet balance updated to:', balance);
+            }
+        }
+
+        // Listen for wallet updates from admin panel (copied from main page)
+        function startWalletUpdateListener(userId) {
+            // Check for wallet updates every 2 seconds
+            setInterval(() => {
+                const updateKey = `wallet_update_${userId}`;
+                const updateData = localStorage.getItem(updateKey);
+
+                if (updateData) {
+                    const update = JSON.parse(updateData);
+
+                    // Use the actual amount and real-time date from the admin action
+                    const actualAmount = update.actualAmount; // Real amount from admin
+                    const realTimeDate = update.realTimeDate; // Real date when admin made the change
+                    const difference = update.newBalance - update.oldBalance;
+
+                    // Update wallet balance display
+                    updateWalletBalance(update.newBalance);
+
+                    // Add transaction record with real data and time
+                    const realTime = new Date(update.timestamp).toLocaleTimeString('en-US', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        hour12: true
+                    });
+                    addTransaction('admin_update', actualAmount, realTimeDate, realTime);
+
+                    // Show notification with better messaging and colors
+                    let message, notificationType;
+
+                    if (actualAmount > 0) {
+                        // Check if this is the first deposit for a new user
+                        const isFirstDeposit = update.oldBalance === 0;
+
+                        if (isFirstDeposit) {
+                            message = `Your deposit of $${actualAmount.toFixed(2)} was successful`;
+                            notificationType = 'success';
+                        } else {
+                            message = `$${actualAmount.toFixed(2)} profit was made`;
+                            notificationType = 'success';
+                        }
+                    } else {
+                        message = `$${Math.abs(actualAmount).toFixed(2)} lose was made`;
+                        notificationType = 'error'; // Red color for losses
+                    }
+
+                    showNotification(message, notificationType);
+
+                    // Save notification to history
+                    saveNotificationToHistory(message, notificationType, actualAmount);
+
+                    // Save updated user data with real transaction data including time
+                    saveUserData(userId, update.newBalance, actualAmount, realTimeDate, realTime);
+
+                    // Clear the update notification
+                    localStorage.removeItem(updateKey);
+                }
+            }, 2000);
+        }
+
+        // Save user data to localStorage (copied from main page)
+        function saveUserData(userId, newBalance, transactionAmount, date, time = null) {
+            let userData = localStorage.getItem(`user_${userId}`);
+            if (!userData) {
+                userData = { balance: 0, transactions: [] };
+            } else {
+                userData = JSON.parse(userData);
+            }
+
+            // Update balance with real amount
+            userData.balance = newBalance;
+
+            // Add transaction with real-time data
+            userData.transactions = userData.transactions || [];
+            userData.transactions.unshift({
+                type: 'admin_update',
+                amount: transactionAmount, // Real amount from admin
+                date: date, // Real date from admin
+                time: time || new Date().toLocaleTimeString('en-US', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: true
+                }),
+                timestamp: Date.now()
+            });
+
+            // Keep only last 50 transactions
+            if (userData.transactions.length > 50) {
+                userData.transactions = userData.transactions.slice(0, 50);
+            }
+
+            localStorage.setItem(`user_${userId}`, JSON.stringify(userData));
+        }
+
+        // Add transaction (simplified for coin page)
+        function addTransaction(type, amount, date, time) {
+            // This would normally update a transaction list
+            // For coin page, we just log it
+            console.log('📊 Transaction added:', { type, amount, date, time });
+        }
+
+        // Show notification (simplified for coin page)
+        function showNotification(message, type) {
+            console.log(`🔔 Notification (${type}):`, message);
+            // You could add a simple notification display here if needed
+        }
+
+        // Save notification to history (simplified for coin page)
+        function saveNotificationToHistory(message, type, amount) {
+            const notification = {
+                message,
+                type,
+                amount,
+                timestamp: Date.now(),
+                date: new Date().toLocaleDateString(),
+                time: new Date().toLocaleTimeString('en-US', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: true
+                })
+            };
+
+            let history = JSON.parse(localStorage.getItem('notificationHistory') || '[]');
+            history.unshift(notification);
+
+            // Keep only last 100 notifications
+            if (history.length > 100) {
+                history = history.slice(0, 100);
+            }
+
+            localStorage.setItem('notificationHistory', JSON.stringify(history));
+        }
+
+        // Session management functions (copied from main page)
+        let sessionTimeout;
+        let activityTimeout;
+
+        function startSessionMonitoring() {
+            // Clear any existing timeouts
+            clearTimeout(sessionTimeout);
+            clearInterval(activityTimeout);
+
+            // Set session timeout
+            sessionTimeout = setTimeout(() => {
+                autoLogoutUser('Session timeout');
+            }, SESSION_DURATION);
+
+            // Check for activity every minute
+            activityTimeout = setInterval(() => {
+                const sessionData = JSON.parse(localStorage.getItem('userSession') || '{}');
+                if (sessionData.lastActivity) {
+                    const timeSinceLastActivity = Date.now() - sessionData.lastActivity;
+                    if (timeSinceLastActivity > SESSION_DURATION) {
+                        autoLogoutUser('Inactivity timeout');
+                    }
+                }
+            }, 60000); // Check every minute
+        }
+
+        function updateLastActivity() {
+            const sessionData = JSON.parse(localStorage.getItem('userSession') || '{}');
+            if (sessionData.user) {
+                sessionData.lastActivity = Date.now();
+                localStorage.setItem('userSession', JSON.stringify(sessionData));
+            }
+        }
+
+        function autoLogoutUser(reason) {
+            console.log('🚪 Auto-logout triggered:', reason);
+
+            // Clear session data
+            localStorage.removeItem('currentUser');
+            localStorage.removeItem('currentUserId');
+            localStorage.removeItem('userSession');
+
+            // Clear timeouts
+            clearTimeout(sessionTimeout);
+            clearInterval(activityTimeout);
+
+            // Update UI to show guest profile (never hide user profile on coin pages)
+            updateUserProfile(null); // This will show guest profile
+        }
+
+        // Dummy functions for compatibility
+        function openAuthModal() {
+            console.log('Auth modal would open here');
+            alert('Please go to the main page to log in');
+        }
+
+        function toggleUserDropdown() {
+            const dropdown = document.getElementById('userDropdown');
+            if (dropdown) {
+                dropdown.style.display = dropdown.style.display === 'block' ? 'none' : 'block';
+            }
+        }
+
+        function openNotificationsPage() {
+            console.log('Notifications page would open here');
+        }
+
+        function showTransactionHistory() {
+            console.log('Transaction history would show here');
+        }
+
+        function logoutUser() {
+            autoLogoutUser('User logout');
+            alert('You have been logged out');
+        }
+
+        // Check and restore user session - ALWAYS show user if logged in
+        function checkAndRestoreUserSession() {
+            console.log('🔍 Checking for logged-in user on coin page...');
+
+            const currentUser = localStorage.getItem('currentUser');
+            const currentUserId = localStorage.getItem('currentUserId');
+
+            console.log('👤 Current user:', currentUser);
+            console.log('🆔 Current user ID:', currentUserId);
+
+            // Priority 1: If we have currentUser and currentUserId, user is logged in
+            if (currentUser && currentUserId) {
+                console.log('✅ User is logged in, showing profile');
+
+                const user = {
+                    id: currentUserId,
+                    email: currentUser,
+                    user_metadata: { email: currentUser }
+                };
+
+                updateUserProfile(user);
+                loadUserData(currentUserId);
+                return true;
+            }
+
+            // Priority 2: Check session data
+            const sessionData = JSON.parse(localStorage.getItem('userSession') || '{}');
+            if (sessionData.user && sessionData.user.email) {
+                console.log('✅ Found user in session data, restoring');
+
+                // Restore to localStorage
+                localStorage.setItem('currentUser', sessionData.user.email);
+                localStorage.setItem('currentUserId', sessionData.user.id);
+
+                const user = {
+                    id: sessionData.user.id,
+                    email: sessionData.user.email,
+                    user_metadata: { email: sessionData.user.email }
+                };
+
+                updateUserProfile(user);
+                loadUserData(sessionData.user.id);
+                return true;
+            }
+
+            // Priority 3: Check for user data in localStorage (fallback)
+            const allKeys = Object.keys(localStorage);
+            for (const key of allKeys) {
+                if (key.startsWith('user_')) {
+                    try {
+                        const userData = JSON.parse(localStorage.getItem(key));
+                        if (userData && userData.email) {
+                            console.log('✅ Found user data, restoring session:', key);
+                            const userId = key.replace('user_', '');
+
+                            // Restore session
+                            localStorage.setItem('currentUser', userData.email);
+                            localStorage.setItem('currentUserId', userId);
+
+                            const user = {
+                                id: userId,
+                                email: userData.email,
+                                user_metadata: { email: userData.email }
+                            };
+
+                            updateUserProfile(user);
+                            loadUserData(userId);
+                            return true;
+                        }
+                    } catch (e) {
+                        // Skip invalid JSON
+                    }
+                }
+            }
+
+            // Priority 4: Check for any email-based keys
+            for (const key of allKeys) {
+                if (key.includes('@') && key.includes('.')) {
+                    try {
+                        const userData = JSON.parse(localStorage.getItem(key));
+                        if (userData && userData.email) {
+                            console.log('✅ Found user data in email key:', key);
+
+                            // Create userId from email or use existing
+                            const userId = userData.id || key.replace(/[^a-zA-Z0-9]/g, '');
+
+                            localStorage.setItem('currentUser', userData.email);
+                            localStorage.setItem('currentUserId', userId);
+
+                            const user = {
+                                id: userId,
+                                email: userData.email,
+                                user_metadata: { email: userData.email }
+                            };
+
+                            updateUserProfile(user);
+                            return true;
+                        }
+                    } catch (e) {
+                        // Skip invalid JSON
+                    }
+                }
+            }
+
+            console.log('ℹ️ No logged-in user found, showing guest profile');
+            updateUserProfile(null); // Show guest profile
+            return false;
+        }
+
+        function toggleUserDropdown() {
+            const dropdown = document.getElementById('userDropdownMenu');
+            if (dropdown) {
+                dropdown.classList.toggle('active');
+            }
+        }
+
+        function viewProfile() {
+            console.log('View profile clicked');
+            toggleUserDropdown();
+        }
+
+        function viewWallet() {
+            console.log('View wallet clicked');
+            toggleUserDropdown();
+        }
+
+        function viewSettings() {
+            console.log('View settings clicked');
+            toggleUserDropdown();
+        }
+
+        // Header functionality functions
+        function openAuthModal() {
+            // Redirect to main page for login
+            window.location.href = 'coinmarketcap.html';
+        }
+
+        function toggleUserDropdown() {
+            const dropdown = document.getElementById('userDropdown');
+            if (dropdown) {
+                dropdown.classList.toggle('active');
+            }
+        }
+
+        function openNotificationsPage() {
+            console.log('Opening notifications page');
+            toggleUserDropdown();
+        }
+
+        function showTransactionHistory() {
+            console.log('Showing transaction history');
+            toggleUserDropdown();
+        }
+
+        function logoutUser() {
+            signOutUser();
+        }
+
+        function performSearch() {
+            const searchBox = document.getElementById('searchBox');
+            if (searchBox && searchBox.value.trim()) {
+                console.log('Searching for:', searchBox.value);
+                // Redirect to main page with search
+                window.location.href = `coinmarketcap.html?search=${encodeURIComponent(searchBox.value)}`;
+            }
+        }
+
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(event) {
+            const dropdown = document.getElementById('userDropdown');
+            const userProfile = document.querySelector('.user-profile');
+
+            if (dropdown && userProfile && !userProfile.contains(event.target)) {
+                dropdown.classList.remove('active');
+            }
+        });
+
+        // Removed showLoggedOutState - coin pages always show user profile
+
+        function clearExpiredSession() {
+            localStorage.removeItem('currentUser');
+            localStorage.removeItem('currentUserId');
+            localStorage.removeItem('userSession');
+
+            // Update UI
+            const loginBtn = document.getElementById('loginBtn');
+            const userProfile = document.getElementById('userProfile');
+
+            if (loginBtn) loginBtn.style.display = 'block';
+            if (userProfile) userProfile.style.display = 'none';
+        }
+
+        // Logout function
+        window.signOutUser = () => {
+            localStorage.removeItem('currentUser');
+            localStorage.removeItem('currentUserId');
+            window.location.href = 'coinmarketcap.html';
+        };
+
+        // Redirect to main page for login
+        window.signInWithGoogle = () => {
+            window.location.href = 'coinmarketcap.html';
+        };
+                document.getElementById('loginBtn').style.display = 'block';
+                document.getElementById('userProfile').style.display = 'none';
+            } catch (error) {
+                console.error('Sign-out error:', error);
+            }
+        };
+    </script>
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: #0B1426;
+            color: #FFFFFF;
+            line-height: 1.5;
+        }
+        
+        /* Header */
+        .header {
+            background: #17233D;
+            border-bottom: 1px solid #2D3748;
+            padding: 0;
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+        }
+        
+        .header-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 20px;
+            height: 64px;
+        }
+        
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 20px;
+            font-weight: bold;
+            color: #FFFFFF;
+            text-decoration: none;
+            transition: all 0.3s ease;
+        }
+
+        .logo:hover {
+            color: #3182CE;
+            transform: translateY(-1px);
+        }
+
+        .logo:hover .logo-icon {
+            transform: scale(1.1);
+            background: #3182CE;
+            border-color: #3182CE;
+            box-shadow: 0 4px 12px rgba(49, 130, 206, 0.4);
+        }
+        
+        .logo-icon {
+            width: 32px;
+            height: 32px;
+            background: #2B3139;
+            border: 2px solid #FFFFFF;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #FFFFFF;
+            font-weight: 900;
+            font-size: 16px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            letter-spacing: -0.5px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        
+        .nav {
+            display: flex;
+            align-items: center;
+            gap: 32px;
+        }
+        
+        .nav-item {
+            color: #A0AEC0;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+            transition: color 0.2s;
+        }
+        
+        .nav-item:hover {
+            color: #FFFFFF;
+        }
+
+        /* Header right section */
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        /* Search container */
+        .search-container {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .search-box {
+            background: #2D3748;
+            border: 1px solid #4A5568;
+            border-radius: 8px;
+            padding: 8px 40px 8px 12px;
+            color: #E2E8F0;
+            font-size: 14px;
+            width: 250px;
+            transition: all 0.3s ease;
+        }
+
+        .search-box:focus {
+            border-color: #3182CE;
+            box-shadow: 0 0 0 3px rgba(49, 130, 206, 0.1);
+            outline: none;
+        }
+
+        .search-btn {
+            position: absolute;
+            right: 8px;
+            background: none;
+            border: none;
+            color: #718096;
+            cursor: pointer;
+            padding: 4px;
+        }
+
+        /* Login button */
+        .login-btn {
+            background: #3182CE;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+
+        .login-btn:hover {
+            background: #2C5282;
+        }
+
+        /* User profile section */
+        .user-profile-section {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        /* Balance display */
+        .balance-display {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #2D3748;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .balance-label {
+            color: #A0AEC0;
+        }
+
+        .balance-amount {
+            color: #48BB78;
+            font-weight: 600;
+        }
+
+        /* Notification icon */
+        .notification-icon {
+            background: #2D3748;
+            padding: 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .notification-icon:hover {
+            background: #4A5568;
+        }
+
+        /* User dropdown */
+        .user-dropdown {
+            position: relative;
+            cursor: pointer;
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #2D3748;
+            padding: 6px 12px;
+            border-radius: 6px;
+            transition: background 0.2s;
+        }
+
+        .user-info:hover {
+            background: #4A5568;
+        }
+
+        .user-avatar {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: #3182CE;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 12px;
+        }
+
+        .user-name {
+            color: #E2E8F0;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .dropdown-arrow {
+            color: #A0AEC0;
+            font-size: 12px;
+        }
+
+        /* Dropdown menu */
+        .dropdown-menu {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            background: #1A202C;
+            border: 1px solid #2D3748;
+            border-radius: 8px;
+            padding: 8px 0;
+            min-width: 180px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+            z-index: 1000;
+            display: none;
+        }
+
+        .dropdown-menu.active {
+            display: block;
+        }
+
+        .dropdown-item {
+            padding: 10px 16px;
+            color: #E2E8F0;
+            cursor: pointer;
+            transition: background 0.2s;
+            font-size: 14px;
+        }
+
+        .dropdown-item:hover {
+            background: #2D3748;
+        }
+
+        .dropdown-divider {
+            height: 1px;
+            background: #2D3748;
+            margin: 8px 0;
+        }
+
+        /* Wallet Balance */
+        .wallet-balance {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #2D3748;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .balance-label {
+            color: #A0AEC0;
+        }
+
+        .balance-amount {
+            color: #48BB78;
+            font-weight: 600;
+        }
+
+        /* Notification Bell */
+        .notification-bell {
+            position: relative;
+            background: #2D3748;
+            padding: 8px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .notification-bell:hover {
+            background: #4A5568;
+        }
+
+        .bell-icon {
+            font-size: 16px;
+        }
+
+        .notification-count {
+            position: absolute;
+            top: -2px;
+            right: -2px;
+            background: #F56565;
+            color: white;
+            border-radius: 50%;
+            width: 18px;
+            height: 18px;
+            font-size: 10px;
+            font-weight: bold;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 18px;
+        }
+
+        /* User Profile */
+        .user-profile {
+            position: relative;
+            display: none;
+            align-items: center;
+            gap: 8px;
+            background: #2D3748;
+            padding: 8px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .user-profile:hover {
+            background: #4A5568;
+        }
+
+        .user-photo {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            background: #3182CE;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 12px;
+            font-weight: bold;
+        }
+
+        .user-photo.placeholder {
+            background: #718096;
+        }
+
+        /* User Dropdown */
+        .user-dropdown {
+            position: absolute;
+            top: 100%;
+            right: 0;
+            background: #1A202C;
+            border: 1px solid #2D3748;
+            border-radius: 12px;
+            padding: 0;
+            min-width: 220px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+            z-index: 1000;
+            opacity: 0;
+            visibility: hidden;
+            transform: translateY(-10px);
+            transition: all 0.3s ease;
+            margin-top: 8px;
+        }
+
+        .user-dropdown.active {
+            opacity: 1;
+            visibility: visible;
+            transform: translateY(0);
+        }
+
+        .user-dropdown-header {
+            padding: 16px;
+            border-bottom: 1px solid #2D3748;
+        }
+
+        .user-dropdown-email {
+            color: #E2E8F0;
+            font-size: 14px;
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+
+        .user-dropdown-status {
+            color: #A0AEC0;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .user-dropdown-menu {
+            padding: 8px 0;
+        }
+
+        .user-dropdown-item {
+            width: 100%;
+            padding: 12px 16px;
+            background: none;
+            border: none;
+            color: #E2E8F0;
+            text-align: left;
+            cursor: pointer;
+            transition: background 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+        }
+
+        .user-dropdown-item:hover {
+            background: #2D3748;
+        }
+
+        .user-dropdown-item.logout {
+            color: #F56565;
+        }
+
+        .user-dropdown-item.logout:hover {
+            background: rgba(245, 101, 101, 0.1);
+        }
+
+        .user-dropdown-icon {
+            font-size: 16px;
+        }
+
+        /* Search Results */
+        .search-results {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            background: #1A202C;
+            border: 1px solid #2D3748;
+            border-radius: 8px;
+            max-height: 300px;
+            overflow-y: auto;
+            z-index: 1000;
+            display: none;
+            margin-top: 4px;
+        }
+        
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .search-box {
+            background: #2D3748;
+            border: 1px solid #4A5568;
+            border-radius: 8px;
+            padding: 8px 12px;
+            color: #FFFFFF;
+            font-size: 14px;
+            width: 240px;
+        }
+        
+        .search-box::placeholder {
+            color: #718096;
+        }
+        
+        .login-btn {
+            background: #3182CE;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .login-btn:hover {
+            background: #2C5282;
+        }
+        
+        .user-profile {
+            display: none;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+        }
+        
+        .user-photo {
+            width: 32px;
+            height: 32px;
+            border-radius: 50%;
+            border: 2px solid #3182CE;
+        }
+        
+        /* Breadcrumb */
+        .breadcrumb {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 16px 20px;
+            font-size: 14px;
+            color: #718096;
+        }
+        
+        .breadcrumb a {
+            color: #3182CE;
+            text-decoration: none;
+        }
+        
+        .breadcrumb a:hover {
+            text-decoration: underline;
+        }
+        
+        /* Main Content */
+        .main-content {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px 40px;
+        }
+        
+        /* Coin Header */
+        .coin-header {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            margin-bottom: 32px;
+            padding: 24px 0;
+            border-bottom: 1px solid #2D3748;
+        }
+        
+        .coin-logo-large {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+        }
+        
+        .coin-title-section {
+            flex: 1;
+        }
+        
+        .coin-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+        
+        .coin-name-large {
+            font-size: 32px;
+            font-weight: bold;
+            color: #FFFFFF;
+        }
+        
+        .coin-symbol-large {
+            font-size: 16px;
+            color: #718096;
+            background: #2D3748;
+            padding: 4px 8px;
+            border-radius: 4px;
+        }
+        
+        .coin-rank {
+            background: #4A5568;
+            color: #FFFFFF;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        
+        .coin-tags {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        
+        .coin-tag {
+            background: #2D3748;
+            color: #A0AEC0;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            border: 1px solid #4A5568;
+        }
+        
+        .coin-actions {
+            display: flex;
+            gap: 12px;
+        }
+        
+        .action-btn {
+            background: #3182CE;
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        
+        .action-btn:hover {
+            background: #2C5282;
+        }
+        
+        .action-btn.secondary {
+            background: #2D3748;
+            border: 1px solid #4A5568;
+        }
+        
+        .action-btn.secondary:hover {
+            background: #4A5568;
+        }
+
+        .buy-btn-large {
+            background: #48BB78 !important;
+            color: white !important;
+        }
+
+        .buy-btn-large:hover {
+            background: #38A169 !important;
+            transform: translateY(-1px);
+        }
+
+        .sell-btn-large {
+            background: #F56565 !important;
+            color: white !important;
+        }
+
+        .sell-btn-large:hover {
+            background: #E53E3E !important;
+            transform: translateY(-1px);
+        }
+        
+        /* Price Section */
+        .price-section {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 32px;
+            margin-bottom: 32px;
+        }
+        
+        .price-main {
+            background: #1A202C;
+            border-radius: 12px;
+            padding: 24px;
+            border: 1px solid #2D3748;
+        }
+        
+        .current-price {
+            font-size: 48px;
+            font-weight: bold;
+            color: #FFFFFF;
+            margin-bottom: 12px;
+        }
+        
+        .price-change {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        
+        .change-24h {
+            font-size: 18px;
+            font-weight: 600;
+        }
+        
+        .positive {
+            color: #48BB78;
+        }
+        
+        .negative {
+            color: #F56565;
+        }
+        
+        .price-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+        
+        .stat-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid #2D3748;
+        }
+        
+        .stat-label {
+            color: #718096;
+            font-size: 14px;
+        }
+        
+        .stat-value {
+            color: #FFFFFF;
+            font-weight: 500;
+            font-size: 14px;
+        }
+        
+        /* Chart Section */
+        .chart-section {
+            background: #1A202C;
+            border-radius: 12px;
+            padding: 24px;
+            border: 1px solid #2D3748;
+        }
+        
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .chart-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: #FFFFFF;
+        }
+        
+        .chart-timeframes {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .timeframe-btn {
+            background: transparent;
+            border: 1px solid #4A5568;
+            color: #A0AEC0;
+            padding: 6px 12px;
+            border-radius: 4px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .timeframe-btn.active {
+            background: #3182CE;
+            color: white;
+            border-color: #3182CE;
+        }
+        
+        .chart-placeholder {
+            height: 300px;
+            background: linear-gradient(135deg, #1A202C, #2D3748);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #718096;
+            font-size: 16px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .chart-line {
+            position: absolute;
+            bottom: 20%;
+            left: 10%;
+            right: 10%;
+            height: 2px;
+            background: linear-gradient(90deg, #48BB78, #68D391, #48BB78);
+            border-radius: 1px;
+        }
+        
+        /* Info Sections */
+        .info-sections {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 32px;
+            margin-top: 32px;
+        }
+        
+        .info-card {
+            background: #1A202C;
+            border-radius: 12px;
+            padding: 24px;
+            border: 1px solid #2D3748;
+        }
+        
+        .info-title {
+            font-size: 20px;
+            font-weight: 600;
+            color: #FFFFFF;
+            margin-bottom: 16px;
+        }
+        
+        .info-text {
+            color: #A0AEC0;
+            line-height: 1.6;
+            font-size: 14px;
+        }
+        
+        .market-stats {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        
+        .market-stat {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 0;
+            border-bottom: 1px solid #2D3748;
+        }
+        
+        .market-stat:last-child {
+            border-bottom: none;
+        }
+        
+        @media (max-width: 768px) {
+            .price-section {
+                grid-template-columns: 1fr;
+            }
+            
+            .info-sections {
+                grid-template-columns: 1fr;
+            }
+            
+            .coin-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 16px;
+            }
+            
+            .current-price {
+                font-size: 36px;
+            }
+            
+            .nav {
+                display: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <div class="header-content">
+            <a href="coinmarketcap.html" class="logo">
+                <div class="logo-icon">M</div>
+                CoinMarketCap
+            </a>
+
+            <nav class="nav">
+                <a href="coinmarketcap.html" class="nav-item">Cryptocurrencies</a>
+                <a href="#" class="nav-item">DexScan</a>
+                <a href="#" class="nav-item">Exchanges</a>
+                <a href="#" class="nav-item">Community</a>
+                <a href="#" class="nav-item">Products</a>
+                <a href="mailto:customerservicecoinmarket24@gmail.com?subject=CoinMarketCap Support Request&body=Hello CoinMarketCap Support Team,%0D%0A%0D%0AI need assistance with:%0D%0A%0D%0APlease describe your issue here...%0D%0A%0D%0AThank you!"
+                   class="nav-item"
+                   style="color: #f0b90b; font-weight: 600;"
+                   title="Contact Support">
+                    📧 Support
+                </a>
+            </nav>
+
+            <div class="header-right">
+                <div class="search-container">
+                    <input type="text" id="searchBox" class="search-box" placeholder="Search cryptocurrencies...">
+                    <button class="search-btn" onclick="performSearch()">🔍</button>
+                    <div id="searchResults" class="search-results"></div>
+                </div>
+                <div id="walletBalance" class="wallet-balance">
+                    <span class="balance-label">Balance:</span>
+                    <span class="balance-amount">$0.00</span>
+                </div>
+
+                <!-- Notification Bell Icon -->
+                <div id="notificationBell" class="notification-bell" onclick="openNotificationsPage()" title="View Notifications">
+                    <span class="bell-icon">🔔</span>
+                    <span id="notificationCount" class="notification-count">0</span>
+                </div>
+
+                <div id="userProfile" class="user-profile" onclick="toggleUserDropdown()" style="display: flex;">
+                    <div id="userPhoto" class="user-photo placeholder">
+                        <span id="userInitials"></span>
+                    </div>
+                    <span id="userName"></span>
+                    <span style="margin-left: 4px; color: #A0AEC0;">▼</span>
+
+                    <!-- User Dropdown Menu -->
+                    <div id="userDropdown" class="user-dropdown">
+                        <div class="user-dropdown-header">
+                            <div id="dropdownEmail" class="user-dropdown-email"></div>
+                            <div class="user-dropdown-status">
+                                <span style="color: #48BB78;">●</span>
+                                Online
+                            </div>
+                        </div>
+                        <div class="user-dropdown-menu">
+                            <button class="user-dropdown-item" onclick="openNotificationsPage()">
+                                <span class="user-dropdown-icon">🔔</span>
+                                Notifications
+                            </button>
+                            <button class="user-dropdown-item" onclick="showTransactionHistory()">
+                                <span class="user-dropdown-icon">📊</span>
+                                Transaction History
+                            </button>
+                            <button class="user-dropdown-item logout" onclick="logoutUser()">
+                                <span class="user-dropdown-icon">🚪</span>
+                                Log Out
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Breadcrumb -->
+    <div class="breadcrumb">
+        <a href="coinmarketcap.html">Cryptocurrencies</a> > <span id="breadcrumbCoin">Bitcoin</span>
+    </div>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Coin Header -->
+        <div class="coin-header">
+            <img id="coinLogo" src="https://cryptologos.cc/logos/bitcoin-btc-logo.png" alt="Bitcoin" class="coin-logo-large">
+            
+            <div class="coin-title-section">
+                <div class="coin-title">
+                    <h1 id="coinName" class="coin-name-large">Bitcoin</h1>
+                    <span id="coinSymbol" class="coin-symbol-large">BTC</span>
+                    <span id="coinRank" class="coin-rank">Rank #1</span>
+                </div>
+                <div class="coin-tags">
+                    <span class="coin-tag">Mineable</span>
+                    <span class="coin-tag">PoW</span>
+                    <span class="coin-tag">SHA-256</span>
+                    <span class="coin-tag">Store of Value</span>
+                </div>
+            </div>
+            
+            <div class="coin-actions">
+                <button class="action-btn buy-btn-large" onclick="redirectToCoinbase(getCurrentCoinSymbol(), 'buy')">🛒 Buy</button>
+                <button class="action-btn sell-btn-large" onclick="redirectToCoinbase(getCurrentCoinSymbol(), 'sell')">💰 Sell</button>
+                <button class="action-btn secondary">+ Add to Watchlist</button>
+                <button class="action-btn secondary">⭐ Add to Portfolio</button>
+            </div>
+        </div>
+
+        <!-- Price Section -->
+        <div class="price-section">
+            <div class="price-main">
+                <div id="currentPrice" class="current-price">$108,094.53</div>
+                <div class="price-change">
+                    <span id="change24h" class="change-24h positive">+$952.31 (0.88%)</span>
+                    <span class="stat-label">today</span>
+                </div>
+
+                <div class="price-stats">
+                    <div class="stat-item">
+                        <span class="stat-label">Market Cap</span>
+                        <span id="marketCap" class="stat-value">$2,149,460,920,555</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Volume (24h)</span>
+                        <span id="volume24h" class="stat-value">$32,652,330,867</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Circulating Supply</span>
+                        <span id="circulatingSupply" class="stat-value">19.8M BTC</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Total Supply</span>
+                        <span id="totalSupply" class="stat-value">21M BTC</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Max Supply</span>
+                        <span id="maxSupply" class="stat-value">21M BTC</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">All Time High</span>
+                        <span id="allTimeHigh" class="stat-value">$108,268.45</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="chart-section">
+                <div class="chart-header">
+                    <h3 class="chart-title">Price Chart</h3>
+                    <div class="chart-timeframes">
+                        <button class="timeframe-btn">1D</button>
+                        <button class="timeframe-btn">7D</button>
+                        <button class="timeframe-btn active">1M</button>
+                        <button class="timeframe-btn">3M</button>
+                        <button class="timeframe-btn">1Y</button>
+                        <button class="timeframe-btn">ALL</button>
+                    </div>
+                </div>
+                <div id="tradingview-chart" class="chart-placeholder">
+                    <!-- TradingView Chart will be loaded here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Info Sections -->
+        <div class="info-sections">
+            <div class="info-card">
+                <h3 class="info-title">About <span id="aboutCoinName">Bitcoin</span></h3>
+                <div class="info-text">
+                    <p id="coinDescription">
+                        Bitcoin is a decentralized cryptocurrency originally described in a 2008 whitepaper by a person, or group of people, using the alias Satoshi Nakamoto. It was launched soon after, in January 2009.
+                    </p>
+                    <br>
+                    <p>
+                        Bitcoin is a peer-to-peer online currency, meaning that all transactions happen directly between equal, independent network participants, without the need for any intermediary to permit or facilitate them. Bitcoin was created, according to Nakamoto's own words, to allow "online payments to be sent directly from one party to another without going through a financial institution."
+                    </p>
+                    <br>
+                    <p>
+                        Some concepts for a similar type of a decentralized electronic currency precede BTC, but Bitcoin holds the distinction of being the first-ever cryptocurrency to come into actual use.
+                    </p>
+                </div>
+            </div>
+
+            <div class="info-card">
+                <h3 class="info-title">Market Stats</h3>
+                <div class="market-stats">
+                    <div class="market-stat">
+                        <span class="stat-label">Market Cap Rank</span>
+                        <span id="marketCapRank" class="stat-value">#1</span>
+                    </div>
+                    <div class="market-stat">
+                        <span class="stat-label">Market Cap</span>
+                        <span id="marketCapStat" class="stat-value">$2,149,460,920,555</span>
+                    </div>
+                    <div class="market-stat">
+                        <span class="stat-label">Market Cap Dominance</span>
+                        <span id="marketDominance" class="stat-value">54.6%</span>
+                    </div>
+                    <div class="market-stat">
+                        <span class="stat-label">Volume / Market Cap</span>
+                        <span id="volumeMarketCap" class="stat-value">0.0152</span>
+                    </div>
+                    <div class="market-stat">
+                        <span class="stat-label">Popular Trends</span>
+                        <span class="stat-value">
+                            <span class="coin-tag">Store of Value</span>
+                        </span>
+                    </div>
+                    <div class="market-stat">
+                        <span class="stat-label">All Time High</span>
+                        <span id="athStat" class="stat-value">$108,268.45</span>
+                    </div>
+                    <div class="market-stat">
+                        <span class="stat-label">All Time Low</span>
+                        <span id="atlStat" class="stat-value">$0.0495</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        // Cryptocurrency data
+        const cryptoData = {
+            'bitcoin': {
+                name: 'Bitcoin',
+                symbol: 'BTC',
+                rank: 1,
+                price: 108094.53,
+                change24h: 0.88,
+                marketCap: 2149460920555,
+                volume24h: 32652330867,
+                circulatingSupply: 19800000,
+                totalSupply: 21000000,
+                maxSupply: 21000000,
+                ath: 108268.45,
+                atl: 0.0495,
+                dominance: 54.6,
+                logo: 'https://cryptologos.cc/logos/bitcoin-btc-logo.png',
+                description: 'Bitcoin is a decentralized cryptocurrency originally described in a 2008 whitepaper by a person, or group of people, using the alias Satoshi Nakamoto. It was launched soon after, in January 2009.',
+                tags: ['Mineable', 'PoW', 'SHA-256', 'Store of Value']
+            },
+            'ethereum': {
+                name: 'Ethereum',
+                symbol: 'ETH',
+                rank: 2,
+                price: 3448.52,
+                change24h: 1.06,
+                marketCap: 295560723571,
+                volume24h: 9315598402,
+                circulatingSupply: 120700000,
+                totalSupply: 120700000,
+                maxSupply: null,
+                ath: 4878.26,
+                atl: 0.4209,
+                dominance: 12.9,
+                logo: 'https://cryptologos.cc/logos/ethereum-eth-logo.png',
+                description: 'Ethereum is a decentralized, open-source blockchain with smart contract functionality. Ether (ETH) is the native cryptocurrency of the platform.',
+                tags: ['Smart Contracts', 'DeFi', 'NFTs', 'PoS']
+            },
+            'tether': {
+                name: 'Tether',
+                symbol: 'USDT',
+                rank: 3,
+                price: 1.00,
+                change24h: -0.00,
+                marketCap: 137618425118,
+                volume24h: 39106414906,
+                circulatingSupply: 137678000000,
+                totalSupply: 137678000000,
+                maxSupply: null,
+                ath: 1.32,
+                atl: 0.5727,
+                dominance: 6.0,
+                logo: 'https://cryptologos.cc/logos/tether-usdt-logo.png',
+                description: 'Tether (USDT) is a stablecoin cryptocurrency that is pegged to the US Dollar.',
+                tags: ['Stablecoin', 'Payments', 'Store of Value']
+            },
+            'xrp': {
+                name: 'XRP',
+                symbol: 'XRP',
+                rank: 4,
+                price: 2.18,
+                change24h: 0.24,
+                marketCap: 123018730165,
+                volume24h: 1490580992,
+                circulatingSupply: 56000000000,
+                totalSupply: 99987000000,
+                maxSupply: 100000000000,
+                ath: 3.84,
+                atl: 0.002802,
+                dominance: 5.4,
+                logo: 'https://cryptologos.cc/logos/xrp-xrp-logo.png',
+                description: 'XRP is a digital asset built for payments. It is the native digital asset on the XRP Ledger.',
+                tags: ['Payments', 'Banking', 'Cross-border']
+            },
+            'bnb': {
+                name: 'BNB',
+                symbol: 'BNB',
+                rank: 5,
+                price: 650.38,
+                change24h: 0.71,
+                marketCap: 91630237484,
+                volume24h: 1232062385,
+                circulatingSupply: 140800000,
+                totalSupply: 140800000,
+                maxSupply: 200000000,
+                ath: 686.31,
+                atl: 0.0398,
+                dominance: 4.0,
+                logo: 'https://cryptologos.cc/logos/bnb-bnb-logo.png',
+                description: 'BNB is the cryptocurrency coin that powers the BNB Chain ecosystem.',
+                tags: ['Exchange Token', 'DeFi', 'Smart Contracts']
+            },
+            'solana': {
+                name: 'Solana',
+                symbol: 'SOL',
+                rank: 6,
+                price: 191.61,
+                change24h: 4.73,
+                marketCap: 91692608172,
+                volume24h: 2437439728,
+                circulatingSupply: 534400000,
+                totalSupply: 534400000,
+                maxSupply: null,
+                ath: 259.96,
+                atl: 0.5005,
+                dominance: 4.0,
+                logo: 'https://cryptologos.cc/logos/solana-sol-logo.png',
+                description: 'Solana is a high-performance blockchain supporting builders around the world creating crypto apps that scale today.',
+                tags: ['Smart Contracts', 'DeFi', 'Web3', 'PoS']
+            },
+            'usdc': {
+                name: 'USDC',
+                symbol: 'USDC',
+                rank: 7,
+                price: 0.9998,
+                change24h: 0.00,
+                marketCap: 61705433183,
+                volume24h: 4195242466,
+                circulatingSupply: 61700000000,
+                totalSupply: 61700000000,
+                maxSupply: null,
+                ath: 1.17,
+                atl: 0.8774,
+                dominance: 2.7,
+                logo: 'https://cryptologos.cc/logos/usd-coin-usdc-logo.png',
+                description: 'USD Coin (USDC) is a fully collateralized US dollar stablecoin.',
+                tags: ['Stablecoin', 'Payments', 'DeFi']
+            }
+        };
+
+        // Get coin from URL parameter or default to bitcoin
+        function getCoinFromURL() {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get('coin') || 'bitcoin';
+        }
+
+        // Get current coin symbol for Coinbase redirect
+        function getCurrentCoinSymbol() {
+            const coinId = getCoinFromURL();
+            const coin = cryptoData[coinId] || cryptoData['bitcoin'];
+            return coin.symbol;
+        }
+
+        // Coinbase redirect function
+        function redirectToCoinbase(symbol, action) {
+            // Map crypto symbols to Coinbase trading pairs
+            const coinbaseSymbols = {
+                'BTC': 'BTC-USD',
+                'ETH': 'ETH-USD',
+                'USDT': 'USDT-USD',
+                'XRP': 'XRP-USD',
+                'BNB': 'BNB-USD',
+                'SOL': 'SOL-USD',
+                'USDC': 'USDC-USD'
+            };
+
+            const tradingPair = coinbaseSymbols[symbol] || `${symbol}-USD`;
+
+            // Coinbase Pro trading URL
+            const coinbaseUrl = `https://pro.coinbase.com/trade/${tradingPair}`;
+
+            // Open in new tab
+            window.open(coinbaseUrl, '_blank');
+        }
+
+        // Load coin data
+        function loadCoinData() {
+            const coinId = getCoinFromURL();
+            const coin = cryptoData[coinId] || cryptoData['bitcoin'];
+
+            // Update page title
+            document.getElementById('pageTitle').textContent = `${coin.name} Price | ${coin.symbol} Price Index and Live Chart — CoinMarketCap`;
+            document.title = `${coin.name} Price | ${coin.symbol} Price Index and Live Chart — CoinMarketCap`;
+
+            // Update breadcrumb
+            document.getElementById('breadcrumbCoin').textContent = coin.name;
+
+            // Update coin header
+            document.getElementById('coinLogo').src = coin.logo;
+            document.getElementById('coinLogo').alt = coin.name;
+            document.getElementById('coinName').textContent = coin.name;
+            document.getElementById('coinSymbol').textContent = coin.symbol;
+            document.getElementById('coinRank').textContent = `Rank #${coin.rank}`;
+
+            // Update price section
+            document.getElementById('currentPrice').textContent = `$${coin.price.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+
+            const changeClass = coin.change24h >= 0 ? 'positive' : 'negative';
+            const changeSymbol = coin.change24h >= 0 ? '+' : '';
+            document.getElementById('change24h').textContent = `${changeSymbol}${coin.change24h.toFixed(2)}%`;
+            document.getElementById('change24h').className = `change-24h ${changeClass}`;
+
+            // Update stats
+            document.getElementById('marketCap').textContent = `$${coin.marketCap.toLocaleString()}`;
+            document.getElementById('volume24h').textContent = `$${coin.volume24h.toLocaleString()}`;
+            document.getElementById('circulatingSupply').textContent = `${(coin.circulatingSupply / 1000000).toFixed(1)}M ${coin.symbol}`;
+            document.getElementById('totalSupply').textContent = coin.totalSupply ? `${(coin.totalSupply / 1000000).toFixed(1)}M ${coin.symbol}` : 'N/A';
+            document.getElementById('maxSupply').textContent = coin.maxSupply ? `${(coin.maxSupply / 1000000).toFixed(1)}M ${coin.symbol}` : 'N/A';
+            document.getElementById('allTimeHigh').textContent = `$${coin.ath.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+
+            // Update about section
+            document.getElementById('aboutCoinName').textContent = coin.name;
+            document.getElementById('coinDescription').textContent = coin.description;
+
+            // Update market stats
+            document.getElementById('marketCapRank').textContent = `#${coin.rank}`;
+            document.getElementById('marketCapStat').textContent = `$${coin.marketCap.toLocaleString()}`;
+            document.getElementById('marketDominance').textContent = `${coin.dominance}%`;
+            document.getElementById('volumeMarketCap').textContent = (coin.volume24h / coin.marketCap).toFixed(4);
+            document.getElementById('athStat').textContent = `$${coin.ath.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+            document.getElementById('atlStat').textContent = `$${coin.atl.toLocaleString('en-US', {minimumFractionDigits: 4, maximumFractionDigits: 4})}`;
+
+            // Load TradingView chart
+            loadTradingViewChart(coin.symbol);
+        }
+
+        // Initialize TradingView Chart
+        function loadTradingViewChart(symbol) {
+            console.log('📊 Loading TradingView chart for:', symbol);
+
+            // Clear existing chart
+            const chartContainer = document.getElementById('tradingview-chart');
+            chartContainer.innerHTML = '';
+
+            // Check if TradingView is available
+            if (typeof TradingView === 'undefined') {
+                console.error('❌ TradingView library not loaded');
+                chartContainer.innerHTML = `
+                    <div style="display: flex; align-items: center; justify-content: center; height: 300px; color: #A0AEC0;">
+                        <div style="text-align: center;">
+                            <div style="font-size: 18px; margin-bottom: 8px;">📊</div>
+                            <div>Chart loading...</div>
+                        </div>
+                    </div>
+                `;
+                // Try to reload TradingView script
+                setTimeout(() => {
+                    if (typeof TradingView !== 'undefined') {
+                        loadTradingViewChart(symbol);
+                    }
+                }, 2000);
+                return;
+            }
+
+            // Map symbols to TradingView format
+            const tradingViewSymbols = {
+                'BTC': 'BINANCE:BTCUSDT',
+                'ETH': 'BINANCE:ETHUSDT',
+                'USDT': 'BINANCE:USDTUSD',
+                'XRP': 'BINANCE:XRPUSDT',
+                'BNB': 'BINANCE:BNBUSDT',
+                'SOL': 'BINANCE:SOLUSDT',
+                'USDC': 'BINANCE:USDCUSDT'
+            };
+
+            const tradingViewSymbol = tradingViewSymbols[symbol] || `BINANCE:${symbol}USDT`;
+            console.log('📈 Using TradingView symbol:', tradingViewSymbol);
+
+            try {
+                new TradingView.widget({
+                    "width": "100%",
+                    "height": 300,
+                    "symbol": tradingViewSymbol,
+                    "interval": "D",
+                    "timezone": "Etc/UTC",
+                    "theme": "dark",
+                    "style": "1",
+                    "locale": "en",
+                    "toolbar_bg": "#1A202C",
+                    "enable_publishing": false,
+                    "hide_top_toolbar": false,
+                    "hide_legend": true,
+                    "save_image": false,
+                    "container_id": "tradingview-chart",
+                    "backgroundColor": "#1A202C",
+                    "gridColor": "#2D3748",
+                    "hide_side_toolbar": true,
+                    "allow_symbol_change": false,
+                    "studies": [],
+                    "show_popup_button": false,
+                    "popup_width": "1000",
+                    "popup_height": "650"
+                });
+                console.log('✅ TradingView chart initialized');
+            } catch (error) {
+                console.error('❌ Error loading TradingView chart:', error);
+                chartContainer.innerHTML = `
+                    <div style="display: flex; align-items: center; justify-content: center; height: 300px; color: #A0AEC0;">
+                        <div style="text-align: center;">
+                            <div style="font-size: 18px; margin-bottom: 8px;">⚠️</div>
+                            <div>Chart unavailable</div>
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        // Initialize page
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🚀 Coin detail page DOM loaded');
+
+            // FORCE check for logged-in user - this ensures user stays logged in
+            console.log('🔍 FORCE checking for logged-in user...');
+
+            // Check and restore user session
+            const userFound = checkAndRestoreUserSession();
+
+            // Double-check: If user session was found, make sure UI is updated
+            if (userFound) {
+                console.log('✅ User session restored successfully');
+            } else {
+                // Final attempt: Check all possible user data sources
+                console.log('🔄 Final attempt to find user data...');
+
+                const currentUser = localStorage.getItem('currentUser');
+                const currentUserId = localStorage.getItem('currentUserId');
+
+                if (currentUser && currentUserId) {
+                    console.log('✅ Found user data in final check:', currentUser);
+
+                    const user = {
+                        id: currentUserId,
+                        email: currentUser,
+                        user_metadata: { email: currentUser }
+                    };
+
+                    updateUserProfile(user);
+                    loadUserData(currentUserId);
+                } else {
+                    // Check for any user data in localStorage
+                    const allKeys = Object.keys(localStorage);
+                    let foundUser = false;
+
+                    for (const key of allKeys) {
+                        if (key.startsWith('user_') || (key.includes('@') && key.includes('.'))) {
+                            try {
+                                const userData = JSON.parse(localStorage.getItem(key));
+                                if (userData && userData.email) {
+                                    console.log('✅ Found user in final scan:', key);
+
+                                    const userId = key.startsWith('user_') ? key.replace('user_', '') : key.replace(/[^a-zA-Z0-9]/g, '');
+
+                                    localStorage.setItem('currentUser', userData.email);
+                                    localStorage.setItem('currentUserId', userId);
+
+                                    const user = {
+                                        id: userId,
+                                        email: userData.email,
+                                        user_metadata: { email: userData.email }
+                                    };
+
+                                    updateUserProfile(user);
+                                    loadUserData(userId);
+                                    foundUser = true;
+                                    break;
+                                }
+                            } catch (e) {
+                                // Skip invalid JSON
+                            }
+                        }
+                    }
+
+                    if (!foundUser) {
+                        console.log('ℹ️ No user found, showing guest profile');
+                        updateUserProfile(null); // This will show guest profile
+                    }
+                }
+            }
+
+            // Set up periodic check to maintain user profile display
+            setInterval(() => {
+                console.log('🔄 Periodic check for user session...');
+                const currentUser = localStorage.getItem('currentUser');
+                const currentUserId = localStorage.getItem('currentUserId');
+                const userProfile = document.getElementById('userProfile');
+
+                // ALWAYS ensure user profile is visible
+                if (userProfile && userProfile.style.display !== 'flex') {
+                    console.log('🔧 Fixing UI: Making sure user profile is always visible');
+                    userProfile.style.display = 'flex';
+                }
+
+                if (currentUser && currentUserId) {
+                    // User is logged in, make sure UI shows real user data
+                    const userName = document.getElementById('userName');
+                    if (userName && userName.textContent === 'Guest') {
+                        console.log('🔧 Fixing UI: User is logged in but showing as Guest');
+                        const user = {
+                            id: currentUserId,
+                            email: currentUser,
+                            user_metadata: { email: currentUser }
+                        };
+                        updateUserProfile(user);
+                    }
+                }
+            }, 5000); // Check every 5 seconds
+
+            loadCoinData();
+
+            // Chart timeframe buttons
+            const timeframeBtns = document.querySelectorAll('.timeframe-btn');
+            timeframeBtns.forEach(btn => {
+                btn.addEventListener('click', function() {
+                    timeframeBtns.forEach(b => b.classList.remove('active'));
+                    this.classList.add('active');
+                });
+            });
+
+            // Simulate real-time price updates
+            setInterval(() => {
+                const coinId = getCoinFromURL();
+                const coin = cryptoData[coinId] || cryptoData['bitcoin'];
+                const change = (Math.random() - 0.5) * 0.02; // ±1% change
+                const newPrice = coin.price * (1 + change);
+
+                document.getElementById('currentPrice').textContent = `$${newPrice.toLocaleString('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+            }, 5000);
+        });
+    </script>
+</body>
+</html>
